@@ -1,0 +1,70 @@
+# This pipeline is a basic starter for using 1ESPipelineTemplates to build in a VM.
+# Refer to our onboarding documentation at https://aka.ms/1espt for more details and support channels.
+name: Pipeline Building In VM
+trigger: none
+
+resources:
+  repositories:
+  - repository: 1ESPipelineTemplates
+    type: git
+    name: 1ESPipelineTemplates/1ESPipelineTemplates
+    ref: refs/tags/release
+
+extends:
+  template: v1/1ES.Unofficial.PipelineTemplate.yml@1ESPipelineTemplates
+  parameters:
+    customBuildTags:
+    - 1ES.PT.ViaStartRight
+    pool:
+      name: MSSecurity-1ES-Build-Agents-Pool
+      image: MSSecurity-1ES-Windows-2022
+      os: windows
+
+    stages:
+    - stage: stage
+      jobs:
+      - job: Job_1
+        displayName: Agent job 1
+        timeoutInMinutes: 90
+        templateContext:
+          outputs:
+          - output: pipelineArtifact
+            displayName: 'Publish Artifact'
+            condition: succeededOrFailed()
+            targetPath: $(build.artifactstagingdirectory)
+            artifactName: $(BuildParameters.ArtifactName)
+        steps:
+        - checkout: self
+          fetchDepth: 1
+          persistCredentials: True
+
+        - task: NuGetToolInstaller@0
+          displayName: Use NuGet 5.x
+          inputs:
+            versionSpec: 5.x
+
+        - task: NuGetCommand@2
+          displayName: NuGet restore
+          inputs:
+            solution: $(BuildParameters.solution)
+            feedRestore: 9952733f-59ca-4113-b186-e31c44bfa290/08c61cca-b541-49c0-b6bd-fd30c50bb33a
+            includeNuGetOrg: false
+
+        - task: VSBuild@1
+          displayName: 'Build solution'
+          inputs:
+            solution: '$(BuildParameters.solution)'
+            msbuildArgs: '/p:DeployOnBuild=true /t:MsftLobbySignage /p:DeployDefaultTarget=WebPublish /p:WebPublishMethod=FileSystem /p:DeleteExistingFiles=true /p:publishUrl="$(System.DefaultWorkingDirectory)\\MFSTLobby"'
+            platform: '$(BuildPlatform)'
+            configuration: '$(BuildConfiguration)'
+            clean: true
+
+        - task: ArchiveFiles@2
+          displayName: 'Archive $(System.DefaultWorkingDirectory)\\MSFTLobbySignage'
+          inputs:
+            rootFolderOrFile: '$(System.DefaultWorkingDirectory)\\MSFTLobbySignage'
+            includeRootFolder: false
+            archiveType: 'zip'
+            archiveFile: '$(Build.ArtifactStagingDirectory)'
+            replaceExistingArchive: true
+
